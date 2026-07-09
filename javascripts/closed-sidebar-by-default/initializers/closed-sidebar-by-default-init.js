@@ -1,7 +1,4 @@
 import { withPluginApi } from "discourse/lib/plugin-api";
-import { addObserver } from "@ember/object/observers";
-
-const SIDEBAR_MOBILE_KEY = "discourse_narative_Sidebar_showSidebar";
 
 export default {
   name: "closed-sidebar-by-default",
@@ -11,30 +8,119 @@ export default {
       const applicationController = api.container.lookup("controller:application");
       const site = api.container.lookup("site:main");
 
-      const applySidebarState = () => {
-        const isMobile = site.mobileView;
+      let touchStartX = null;
+      let touchStartY = null;
+      let listenersAttached = false;
+      let resizeTimeout = null;
 
-        if (isMobile) {
-          const storedState = localStorage.getItem(SIDEBAR_MOBILE_KEY);
-          if (storedState === null) {
-            applicationController.set("showSidebar", false);
-            localStorage.setItem(SIDEBAR_MOBILE_KEY, "false");
-          } else {
-            applicationController.set("showSidebar", storedState === "true");
-          }
+      const EDGE_ZONE_RATIO = 0.2;
+      const MIN_SWIPE_DISTANCE = 50;
+      const MAX_VERTICAL_DRIFT = 100;
+      const TABLET_BREAKPOINT = 1024;
+      const RESIZE_DEBOUNCE_MS = 150;
+
+      const onTouchStart = (event) => {
+        if (event.touches.length !== 1) {
+          touchStartX = null;
+          touchStartY = null;
+          return;
+        }
+
+        const touch = event.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+      };
+
+      const onTouchEnd = (event) => {
+        if (touchStartX === null || touchStartY === null) {
+          return;
+        }
+
+        const touch = event.changedTouches[0];
+        const deltaX = touch.clientX - touchStartX;
+        const deltaY = touch.clientY - touchStartY;
+        const edgeZone = window.innerWidth * EDGE_ZONE_RATIO;
+
+        if (
+          touchStartX <= edgeZone &&
+          deltaX >= MIN_SWIPE_DISTANCE &&
+          Math.abs(deltaY) <= MAX_VERTICAL_DRIFT
+        ) {
+          applicationController.set("showSidebar", true);
+        }
+
+        touchStartX = null;
+        touchStartY = null;
+      };
+
+      const attachSwipeListeners = () => {
+        if (listenersAttached || !shouldCloseSidebar()) {
+          return;
+        }
+
+        document.addEventListener("touchstart", onTouchStart, { passive: true });
+        document.addEventListener("touchend", onTouchEnd, { passive: true });
+        listenersAttached = true;
+      };
+
+      const detachSwipeListeners = () => {
+        if (!listenersAttached) {
+          return;
+        }
+
+        document.removeEventListener("touchstart", onTouchStart);
+        document.removeEventListener("touchend", onTouchEnd);
+        listenersAttached = false;
+      };
+
+      const shouldCloseSidebar = () => {
+        return site.mobileView || window.innerWidth < TABLET_BREAKPOINT;
+      };
+
+      const applySidebarState = () => {
+        if (shouldCloseSidebar()) {
+          applicationController.set("showSidebar", false);
+          attachSwipeListeners();
         } else {
-          const storedState = localStorage.getItem(SIDEBAR_MOBILE_KEY);
-          if (storedState === "false") {
-            applicationController.set("showSidebar", false);
-          }
+          applicationController.set("showSidebar", true);
+          detachSwipeListeners();
+        }
+      };
+
+      const onResize = () => {
+        if (resizeTimeout) {
+          clearTimeout(resizeTimeout);
+        }
+
+        resizeTimeout = setTimeout(() => {
+          applySidebarState();
+          resizeTimeout = null;
+        }, RESIZE_DEBOUNCE_MS);
+      };
+
+      const attachResizeListener = () => {
+        window.addEventListener("resize", onResize, { passive: true });
+      };
+
+      const cleanup = () => {
+        detachSwipeListeners();
+        site.removeObserver("mobileView", site, applySidebarState);
+        window.removeEventListener("resize", onResize);
+
+        if (resizeTimeout) {
+          clearTimeout(resizeTimeout);
+          resizeTimeout = null;
         }
       };
 
       applySidebarState();
 
-      addObserver(site, "mobileView", () => {
-        applySidebarState();
-      });
+      site.addObserver("mobileView", site, applySidebarState);
+      attachResizeListener();
+
+      if (typeof api.cleanupStream === "function") {
+        api.cleanupStream(cleanup);
+      }
     });
   },
 };
