@@ -12,10 +12,9 @@ export default {
       } catch (error) {
         // eslint-disable-next-line no-console
         console.warn(
-          "[closed-sidebar-by-default] sidebar-state service not available:",
+          "[closed-sidebar-by-default] sidebar-state service not available",
           error
         );
-        return;
       }
 
       const site = api.container.lookup("site:main");
@@ -26,17 +25,28 @@ export default {
       }
 
       const EXEMPT_CATEGORIES = ["glosario", "trading-curso", "wiki"];
+      const LISTING_SEGMENTS = new Set([
+        "l",
+        "latest",
+        "top",
+        "new",
+        "unread",
+        "hot",
+        "old",
+      ]);
       const TABLET_BREAKPOINT = 1024;
       const EDGE_ZONE_RATIO = 0.2;
       const MIN_SWIPE_DISTANCE = 50;
       const MAX_VERTICAL_DRIFT = 100;
       const RESIZE_DEBOUNCE_MS = 150;
+      const STATE_DELAY_MS = 50;
 
       let touchStartX = null;
       let touchStartY = null;
       let listenersAttached = false;
       let resizeTimeout = null;
-      let currentCategorySlug = null;
+      let stateTimeout = null;
+      let isInExemptCategory = false;
 
       const isNarrowViewport = () =>
         site.mobileView || window.innerWidth < TABLET_BREAKPOINT;
@@ -45,32 +55,62 @@ export default {
         const parts = window.location.pathname.split("/").filter(Boolean);
         const categoryIndex = parts.indexOf("c");
 
-        if (categoryIndex !== -1 && parts[categoryIndex + 1]) {
-          // /c/<slug> or /c/<parent>/<slug>: the last segment is the active category
-          return parts[parts.length - 1];
+        if (categoryIndex === -1 || !parts[categoryIndex + 1]) {
+          return false;
         }
 
-        return null;
+        const categorySlugs = parts
+          .slice(categoryIndex + 1)
+          .filter((segment) => !LISTING_SEGMENTS.has(segment));
+
+        return categorySlugs.some((slug) => EXEMPT_CATEGORIES.includes(slug));
       };
 
-      const updateCurrentCategory = () => {
-        currentCategorySlug = detectCategoryFromPath();
+      const updateExemptCategory = () => {
+        isInExemptCategory = detectCategoryFromPath();
       };
 
-      const isExemptCategory = () =>
-        currentCategorySlug && EXEMPT_CATEGORIES.includes(currentCategorySlug);
-
-      const setSidebarState = (visible) => {
-        if (!sidebarState) {
+      const toggleSidebarDOM = (visible) => {
+        const html = document.documentElement;
+        if (!html) {
           return;
         }
 
-        run(() => {
-          if (typeof sidebarState.set === "function") {
-            sidebarState.set("showSidebar", visible);
-          } else {
-            sidebarState.showSidebar = visible;
+        if (visible) {
+          html.classList.add("sidebar-open");
+          html.classList.remove("sidebar-closed");
+        } else {
+          html.classList.remove("sidebar-open");
+          html.classList.add("sidebar-closed");
+        }
+      };
+
+      const setSidebarState = (visible) => {
+        const apply = () => {
+          if (sidebarState) {
+            if (typeof sidebarState.setShowSidebar === "function") {
+              sidebarState.setShowSidebar(visible);
+            } else if (typeof sidebarState.set === "function") {
+              sidebarState.set("showSidebar", visible);
+            } else {
+              sidebarState.showSidebar = visible;
+            }
           }
+
+          toggleSidebarDOM(visible);
+        };
+
+        if (stateTimeout) {
+          clearTimeout(stateTimeout);
+        }
+
+        run.scheduleOnce("afterRender", () => {
+          apply();
+
+          stateTimeout = setTimeout(() => {
+            apply();
+            stateTimeout = null;
+          }, STATE_DELAY_MS);
         });
       };
 
@@ -86,6 +126,24 @@ export default {
         const touch = event.touches[0];
         touchStartX = touch.clientX;
         touchStartY = touch.clientY;
+      };
+
+      const onTouchMove = (event) => {
+        if (touchStartX === null || touchStartY === null) {
+          return;
+        }
+
+        const touch = event.touches[0];
+        const deltaX = touch.clientX - touchStartX;
+        const deltaY = touch.clientY - touchStartY;
+
+        if (
+          touchStartX <= window.innerWidth * EDGE_ZONE_RATIO &&
+          deltaX > 0 &&
+          Math.abs(deltaY) <= MAX_VERTICAL_DRIFT
+        ) {
+          event.preventDefault();
+        }
       };
 
       const onTouchEnd = (event) => {
@@ -119,6 +177,10 @@ export default {
           passive: true,
           capture: true,
         });
+        document.addEventListener("touchmove", onTouchMove, {
+          passive: false,
+          capture: true,
+        });
         document.addEventListener("touchend", onTouchEnd, {
           passive: true,
           capture: true,
@@ -132,15 +194,16 @@ export default {
         }
 
         document.removeEventListener("touchstart", onTouchStart, true);
+        document.removeEventListener("touchmove", onTouchMove, true);
         document.removeEventListener("touchend", onTouchEnd, true);
         listenersAttached = false;
       };
 
       const applySidebarState = () => {
-        updateCurrentCategory();
+        updateExemptCategory();
 
         if (isNarrowViewport()) {
-          setSidebarState(isExemptCategory());
+          setSidebarState(isInExemptCategory);
           attachSwipeListeners();
         } else {
           setSidebarState(true);
@@ -172,6 +235,11 @@ export default {
         if (resizeTimeout) {
           clearTimeout(resizeTimeout);
           resizeTimeout = null;
+        }
+
+        if (stateTimeout) {
+          clearTimeout(stateTimeout);
+          stateTimeout = null;
         }
 
         detachSwipeListeners();
