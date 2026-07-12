@@ -104,7 +104,7 @@ export default {
           clearTimeout(stateTimeout);
         }
 
-        run.scheduleOnce("afterRender", () => {
+        run(() => {
           apply();
 
           stateTimeout = setTimeout(() => {
