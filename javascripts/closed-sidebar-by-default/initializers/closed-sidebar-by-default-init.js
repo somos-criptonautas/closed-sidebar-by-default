@@ -6,42 +6,62 @@ export default {
 
   initialize() {
     withPluginApi("0.8", (api) => {
-      const applicationController = api.container.lookup("controller:application");
-      const sidebarState = api.container.lookup("service:sidebar-state");
+      let sidebarState;
+      try {
+        sidebarState = api.container.lookup("service:sidebar-state");
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[closed-sidebar-by-default] sidebar-state service not available:",
+          error
+        );
+        return;
+      }
+
       const site = api.container.lookup("site:main");
+      if (!site) {
+        // eslint-disable-next-line no-console
+        console.warn("[closed-sidebar-by-default] site:main not available");
+        return;
+      }
+
+      const EXEMPT_CATEGORIES = ["glosario", "trading-curso", "wiki"];
+      const TABLET_BREAKPOINT = 1024;
+      const EDGE_ZONE_RATIO = 0.2;
+      const MIN_SWIPE_DISTANCE = 50;
+      const MAX_VERTICAL_DRIFT = 100;
+      const RESIZE_DEBOUNCE_MS = 150;
 
       let touchStartX = null;
       let touchStartY = null;
       let listenersAttached = false;
       let resizeTimeout = null;
-
-      const EDGE_ZONE_RATIO = 0.2;
-      const MIN_SWIPE_DISTANCE = 50;
-      const MAX_VERTICAL_DRIFT = 100;
-      const TABLET_BREAKPOINT = 1024;
-      const RESIZE_DEBOUNCE_MS = 150;
+      let currentCategorySlug = null;
 
       const isNarrowViewport = () =>
         site.mobileView || window.innerWidth < TABLET_BREAKPOINT;
 
-      const openSidebar = () => {
-        if (!sidebarState) {
-          applicationController.set("showSidebar", true);
-          return;
+      const detectCategoryFromPath = () => {
+        const parts = window.location.pathname.split("/").filter(Boolean);
+        const categoryIndex = parts.indexOf("c");
+
+        if (categoryIndex !== -1 && parts[categoryIndex + 1]) {
+          // /c/<slug> or /c/<parent>/<slug>: the last segment is the active category
+          return parts[parts.length - 1];
         }
 
-        run(() => {
-          if (typeof sidebarState.set === "function") {
-            sidebarState.set("showSidebar", true);
-          } else {
-            sidebarState.showSidebar = true;
-          }
-        });
+        return null;
       };
+
+      const updateCurrentCategory = () => {
+        currentCategorySlug = detectCategoryFromPath();
+      };
+
+      const isExemptCategory = () =>
+        currentCategorySlug && EXEMPT_CATEGORIES.includes(currentCategorySlug);
 
       const setSidebarState = (visible) => {
         if (!sidebarState) {
-          applicationController.set("showSidebar", visible);
           return;
         }
 
@@ -53,6 +73,8 @@ export default {
           }
         });
       };
+
+      const openSidebar = () => setSidebarState(true);
 
       const onTouchStart = (event) => {
         if (event.touches.length !== 1) {
@@ -115,8 +137,10 @@ export default {
       };
 
       const applySidebarState = () => {
+        updateCurrentCategory();
+
         if (isNarrowViewport()) {
-          setSidebarState(false);
+          setSidebarState(isExemptCategory());
           attachSwipeListeners();
         } else {
           setSidebarState(true);
@@ -137,6 +161,7 @@ export default {
 
       applySidebarState();
 
+      api.onPageChange(applySidebarState);
       site.addObserver("mobileView", site, applySidebarState);
       window.addEventListener("resize", onResize, { passive: true });
 
