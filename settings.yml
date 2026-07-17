@@ -1,0 +1,8 @@
+enable_swipe:
+  type: bool
+  default: true
+
+exempt_categories:
+  type: list
+  list_type: compact
+  default: "glosario|trading-curso|wiki"

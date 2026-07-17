@@ -1,0 +1,6 @@
+en:
+  theme_metadata:
+    description: "Keeps the sidebar closed by default on mobile and lets users open/close it with a left-edge swipe. The sidebar auto-opens in the categories you list."
+    settings:
+      enable_swipe: "Enable opening/closing the sidebar with a left-edge swipe on mobile. When off, the sidebar still starts closed but can only be toggled with the header button."
+      exempt_categories: "Category slugs where the sidebar should auto-open on mobile instead of staying closed (e.g. glosario). Use the category slug as it appears in the URL."
