@@ -33,11 +33,36 @@ export default apiInitializer("1.0", (api) => {
 
   // --- settings ------------------------------------------------------------
 
-  const swipeEnabled = () => settings?.enable_swipe !== false;
+  // `settings` is injected by the theme runtime. Reading it via a typeof guard
+  // avoids a ReferenceError that would silently abort the whole initializer if
+  // it ever isn't defined in scope.
+  const setting = (key, fallback) =>
+    typeof settings === "undefined" || settings[key] === undefined
+      ? fallback
+      : settings[key];
 
-  // `settings.exempt_categories` is a "list" setting delivered as an array.
+  const swipeEnabled = () => setting("enable_swipe", true) !== false;
+  const debugEnabled = () => setting("debug_mode", false) === true;
+
+  // On-screen diagnostic readout (only rendered when debug_mode is on). Lets us
+  // confirm touch detection on a real device without needing console access.
+  let debugEl = null;
+  const debug = (msg) => {
+    if (!debugEnabled()) {
+      return;
+    }
+    if (!debugEl) {
+      debugEl = document.createElement("div");
+      debugEl.style.cssText =
+        "position:fixed;bottom:8px;left:8px;z-index:99999;background:rgba(0,0,0,.78);color:#4caf50;font:12px/1.4 monospace;padding:8px 10px;border-radius:8px;max-width:72vw;white-space:pre-wrap;pointer-events:none;";
+      document.body.appendChild(debugEl);
+    }
+    debugEl.textContent = `CSBD: ${msg}`;
+  };
+
+  // `exempt_categories` is a "list" setting delivered as an array.
   const exemptCategories = () => {
-    const raw = settings?.exempt_categories;
+    const raw = setting("exempt_categories", null);
     if (!raw) {
       return [];
     }
@@ -80,8 +105,10 @@ export default apiInitializer("1.0", (api) => {
     const btn = findToggle();
     if (btn) {
       btn.click();
+      debug(`toggle CLICK (${btn.className || btn.tagName})`);
       return true;
     }
+    debug("toggle NOT found");
     return false;
   };
 
@@ -163,6 +190,11 @@ export default apiInitializer("1.0", (api) => {
     // Track when opening from the left edge, or any gesture while the sidebar
     // is already open (so we can close it).
     tracking = startX <= EDGE_ZONE_PX || isSidebarShowing();
+    if (debugEnabled()) {
+      debug(
+        `touchstart x=${Math.round(startX)} edge≤${EDGE_ZONE_PX} showing=${isSidebarShowing()} tracking=${tracking}`
+      );
+    }
   };
 
   const onTouchMove = (e) => {
@@ -204,6 +236,11 @@ export default apiInitializer("1.0", (api) => {
     const dy = t.clientY - startY;
 
     if (horizontalLocked === true && Math.abs(dy) <= MAX_VERTICAL_DRIFT_PX) {
+      if (debugEnabled()) {
+        debug(
+          `swipe dx=${Math.round(dx)} dy=${Math.round(dy)} showing=${isSidebarShowing()}`
+        );
+      }
       if (!isSidebarShowing() && dx >= SWIPE_THRESHOLD_PX) {
         openSidebar();
       } else if (isSidebarShowing() && dx <= -SWIPE_THRESHOLD_PX) {

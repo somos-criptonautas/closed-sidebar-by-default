@@ -2,6 +2,10 @@ enable_swipe:
   type: bool
   default: true
 
+debug_mode:
+  type: bool
+  default: false
+
 exempt_categories:
   type: list
   list_type: compact

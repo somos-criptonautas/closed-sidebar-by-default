@@ -3,4 +3,5 @@ es:
     description: "Mantiene la barra lateral cerrada por defecto en móvil y permite abrirla o cerrarla deslizando desde el borde izquierdo. La barra se abre automáticamente en las categorías que indiques."
     settings:
       enable_swipe: "Permite abrir o cerrar la barra lateral deslizando desde el borde izquierdo en móvil. Si se desactiva, la barra sigue empezando cerrada pero solo se alterna con el botón de la cabecera."
+      debug_mode: "Muestra un pequeño panel en pantalla en móvil al deslizar, para diagnosticar si se detectan los gestos y el botón de la barra. Desactívalo en producción."
       exempt_categories: "Slugs de categorías donde la barra lateral debe abrirse automáticamente en móvil en lugar de permanecer cerrada (p. ej. glosario). Usa el slug tal como aparece en la URL."
